@@ -6,12 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
-import numpy as np
-
 from .config import PipelineConfig
 from .data import ImageDataset, ImageSample
 from .detector import CannyCrackDetector, CrackDetectionResult, CrackDetector
-from .preprocessing import preprocess
+from .preprocessing import PreprocessedImage, preprocess
 from .visualization import save_visualization
 
 
@@ -20,7 +18,7 @@ class PipelineArtifact:
     """Artifacts produced for each processed image."""
 
     sample: ImageSample
-    processed: np.ndarray
+    processed: PreprocessedImage
     result: CrackDetectionResult
     visualization_path: Optional[Path]
 
@@ -49,13 +47,14 @@ class CrackDetectionPipeline:
             print(message)
 
     def _maybe_save_visualization(
-        self, sample: ImageSample, processed: np.ndarray, result: CrackDetectionResult
+        self, sample: ImageSample, processed: PreprocessedImage, result: CrackDetectionResult
     ) -> Optional[Path]:
         if not self._config.visualize or self._config.output_dir is None:
             return None
         relative = sample.path.relative_to(self._config.dataset.image_root)
-        destination = self._config.output_dir / relative.with_suffix("_summary.png")
-        save_visualization(sample.image, processed, result, destination, title=str(relative))
+        summary_name = f"{relative.stem}_summary.png"
+        destination = self._config.output_dir / relative.with_name(summary_name)
+        save_visualization(sample.image, processed.smoothed, result, destination, title=str(relative))
         return destination
 
 

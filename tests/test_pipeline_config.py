@@ -34,3 +34,34 @@ def test_dataset_validate_rejects_missing_dir(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError):
         dataset.validate()
+
+
+def test_iter_image_paths_prefers_image_subdir_when_labels_present(tmp_path: Path) -> None:
+    image_dir = tmp_path / "image"
+    label_dir = tmp_path / "label"
+    image_dir.mkdir()
+    label_dir.mkdir()
+    valid = image_dir / "a.png"
+    valid.write_bytes(b"data")
+    (label_dir / "b.png").write_bytes(b"label")
+
+    config = PipelineConfig(dataset=DatasetConfig(image_root=tmp_path))
+
+    paths = list(config.iter_image_paths())
+
+    assert paths == [valid]
+
+
+def test_iter_image_paths_uses_explicit_image_subdir(tmp_path: Path) -> None:
+    train_dir = tmp_path / "train"
+    image_dir = train_dir / "images"
+    label_dir = train_dir / "label"
+    image_dir.mkdir(parents=True)
+    label_dir.mkdir()
+    valid = image_dir / "keep.jpg"
+    valid.write_bytes(b"data")
+    (label_dir / "ignore.jpg").write_bytes(b"label")
+
+    config = PipelineConfig(dataset=DatasetConfig(image_root=train_dir, image_subdir="images"))
+
+    assert list(config.iter_image_paths()) == [valid]

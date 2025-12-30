@@ -3,9 +3,15 @@ A modular, scalable crack detection toolkit built in Python. The project exposes
 
 ## Features
 - Config-driven pipeline with dataclass-based configuration objects
-- Canny edge detector baseline with connected-component filtering
+- Hand-crafted, multi-scale Canny edge detector (bilateral denoising, dual Gaussian passes, Sobel gradients, NMS, hysteresis) layered with connected-component analytics, grid suppression, and thin-crack rescue
 - Optional visualization artifacts saved as multi-panel figures
 - Pytest-ready structure with a starter test suite and metadata in `pyproject.toml`
+
+## Technical Notes
+- All processing stages (grayscale conversion, bilateral smoothing, Gaussian smoothing, Sobel gradients, Non-Maximum Suppression, hysteresis thresholding, and component analytics) are implemented manually with NumPy to comply with the "no off-the-shelf ML/CV ops" constraint.
+- A multi-stage filter blends density checks, directional kernels, perimeter/area heuristics, local variance maps, and multi-scale Canny outputs to suppress grout/hex tiles while re-introducing thin diagonal cracks detected at lighter blur scales.
+- When paired `image/` and `label/` directories exist (e.g., `train/image` vs `train/label`), the loader automatically operates on `image/` to avoid accidentally re-processing ground-truth masks; override with `DatasetConfig.image_subdir` if you intentionally need a different branch.
+- Pillow is used purely for decoding images from disk; Matplotlib is imported lazily so you can run the pipeline headless unless visualizations are requested.
 
 ## Getting Started
 1. Create and activate your Python environment (Python \>= 3.10).
@@ -21,7 +27,7 @@ A modular, scalable crack detection toolkit built in Python. The project exposes
 	```
 4. Run the pipeline:
 	```sh
-	python -m crack_detection.cli run --image-root path/to/images --visualize --output-dir outputs
+	python -m crack_detection.cli --image-root path/to/images --visualize --output-dir outputs
 	```
 
 ## Project Layout

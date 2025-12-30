@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Optional
 
-import cv2
 import numpy as np
 
 from .config import PipelineConfig
@@ -33,7 +32,7 @@ class ImageDataset:
 
     def __iter__(self) -> Iterator[ImageSample]:
         for image_path in self._config.iter_image_paths():
-            image = cv2.imread(str(image_path))
+            image = _load_image(image_path)
             if image is None:
                 continue
             yield ImageSample(path=image_path, image=image)
@@ -46,3 +45,15 @@ class ImageDataset:
             yield sample
             if idx + 1 >= limit:
                 break
+
+
+def _load_image(path: Path) -> Optional[np.ndarray]:
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover - handled at runtime
+        raise ImportError("Pillow is required to read images. Install with `pip install pillow`.") from exc
+    try:
+        with Image.open(path) as img:
+            return np.array(img.convert("RGB"))
+    except (OSError, ValueError):
+        return None

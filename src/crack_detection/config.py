@@ -25,8 +25,8 @@ class PreprocessingConfig:
 class DetectorConfig:
     """Configuration that controls the crack detector behavior."""
 
-    low_threshold: float = 20.0
-    high_threshold: float = 60.0
+    low_threshold: float = 12.0
+    high_threshold: float = 45.0
     weak_pixel_value: float = 75.0
     min_crack_area: int = 40
     max_component_axis_ratio: float = 0.80
@@ -43,8 +43,8 @@ class DetectorConfig:
     texture_min_length: float = 18.0
     thin_crack_max_width: float = 4.0
     thin_crack_min_length: float = 28.0
-    thin_low_threshold: float = 10.0
-    thin_high_threshold: float = 35.0
+    thin_low_threshold: float = 6.0
+    thin_high_threshold: float = 28.0
     light_gaussian_kernel_size: int = 3
     light_gaussian_sigma: float = 0.8
 

@@ -36,7 +36,6 @@ class ComponentStats:
     orientation: float
     coverage_height: float
     coverage_width: float
-    coords: List[Tuple[int, int]]
 
 
 class CrackDetector(Protocol):
@@ -53,8 +52,7 @@ class CannyCrackDetector:
 
     def __init__(self, config: DetectorConfig) -> None:
         if config.high_threshold <= config.low_threshold:
-            raise ValueError(
-                "high_threshold must be greater than low_threshold")
+            raise ValueError("high_threshold must be greater than low_threshold")
         self._config = config
 
     def detect(self, image: PreprocessedImage) -> CrackDetectionResult:
@@ -65,8 +63,7 @@ class CannyCrackDetector:
             self._config.light_gaussian_sigma,
         )
         if heavy_input.ndim != 2 or light_input.ndim != 2:
-            raise ValueError(
-                "Canny detector expects single-channel grayscale inputs.")
+            raise ValueError("Canny detector expects single-channel grayscale inputs.")
 
         # Stage 1: classic Canny at two smoothing scales.
         heavy_mask, heavy_suppressed = _run_canny(
@@ -86,18 +83,14 @@ class CannyCrackDetector:
 
         # Stage 2: analyze connected components from the heavy mask (main signal path).
         labels, stats = _label_components(heavy_mask)
-        variance_map = _local_variance(
-            image.base, self._config.texture_kernel_size)
-        linear_strength = _linear_response(
-            heavy_mask > 0, self._config.grid_kernel_size)
+        variance_map = _local_variance(image.base, self._config.texture_kernel_size)
+        linear_strength = _linear_response(heavy_mask > 0, self._config.grid_kernel_size)
 
         # Stage 3: classify which components belong to grout/grid structures or textured clutter.
         grid_labels = (
-            _select_grid_components(stats, labels, linear_strength,
-                                    self._config) if self._config.suppress_grid_lines else set()
+            _select_grid_components(stats, labels, linear_strength, self._config) if self._config.suppress_grid_lines else set()
         )
-        texture_labels = _select_texture_components(
-            stats, labels, variance_map, self._config)
+        texture_labels = _select_texture_components(stats, labels, variance_map, self._config)
 
         # Stage 4: remember thin, long cracks so they survive even if they overlap grout masks.
         thin_labels = _select_thin_components(stats, self._config)
@@ -220,8 +213,7 @@ def _run_canny(image: np.ndarray, *, low: float, high: float, weak: float, stron
 
     grad_mag, grad_dir = _compute_gradients(image)
     suppressed = _non_maximum_suppression(grad_mag, grad_dir)
-    thresholded = _double_threshold(
-        suppressed, low=low, high=high, weak_value=weak, strong_value=strong)
+    thresholded = _double_threshold(suppressed, low=low, high=high, weak_value=weak, strong_value=strong)
     mask = _hysteresis(thresholded, weak=weak, strong=strong)
     return mask, suppressed
 
@@ -267,8 +259,7 @@ def _label_components(mask: np.ndarray) -> Tuple[np.ndarray, List[ComponentStats
                     ny, nx = cy + dy, cx + dx
                     if ny < 0 or ny >= rows or nx < 0 or nx >= cols or not binary[ny, nx]:
                         perimeter += 1
-            stats.append(_build_component_stats(
-                label_id, coords, perimeter, rows, cols))
+            stats.append(_build_component_stats(label_id, coords, perimeter, rows, cols))
             label_id += 1
     return labels, stats
 
@@ -296,8 +287,7 @@ def _build_component_stats(
         cov = np.cov(centered, rowvar=False)
         eigvals, eigvecs = np.linalg.eigh(cov)
         major_axis = eigvecs[:, np.argmax(eigvals)]
-        orientation = float(
-            abs(np.degrees(np.arctan2(major_axis[0], major_axis[1]))))
+        orientation = float(abs(np.degrees(np.arctan2(major_axis[0], major_axis[1]))))
 
     area = len(coords)
     coverage_height = height / rows
@@ -315,58 +305,7 @@ def _build_component_stats(
         orientation=orientation,
         coverage_height=coverage_height,
         coverage_width=coverage_width,
-        coords=coords,
     )
-
-
-def _is_straight_line(coords: List[Tuple[int, int]], angle_variance_threshold: float = 5.0) -> bool:
-    """Check if a component is a straight line by analyzing angle consistency along its length."""
-    if len(coords) < 3:
-        return False  # Too short to determine
-
-    # Sort coords along the principal axis (approximate the line direction)
-    coords_array = np.array(coords)
-    if len(coords) >= 2:
-        # Use PCA to find the main direction
-        centered = coords_array - coords_array.mean(axis=0)
-        cov = np.cov(centered.T)
-        eigvals, eigvecs = np.linalg.eigh(cov)
-        principal_axis = eigvecs[:, np.argmax(eigvals)]
-
-        # Project points onto the principal axis
-        projections = centered @ principal_axis
-        sorted_indices = np.argsort(projections)
-        sorted_coords = coords_array[sorted_indices]
-    else:
-        sorted_coords = coords_array
-
-    # Calculate angles between consecutive segments
-    angles = []
-    for i in range(1, len(sorted_coords) - 1):
-        p1 = sorted_coords[i - 1]
-        p2 = sorted_coords[i]
-        p3 = sorted_coords[i + 1]
-
-        # Vectors
-        v1 = p2 - p1
-        v2 = p3 - p2
-
-        # Avoid zero vectors
-        if np.linalg.norm(v1) == 0 or np.linalg.norm(v2) == 0:
-            continue
-
-        # Angle between vectors
-        cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-        cos_angle = np.clip(cos_angle, -1, 1)
-        angle = np.degrees(np.arccos(cos_angle))
-        angles.append(angle)
-
-    if not angles:
-        return False
-
-    # Check variance of angles
-    angle_variance = np.var(angles)
-    return angle_variance < angle_variance_threshold
 
 
 def _local_variance(image: np.ndarray, kernel_size: int) -> np.ndarray:
@@ -411,10 +350,8 @@ def _linear_response(binary_mask: np.ndarray, kernel_size: int) -> np.ndarray:
 
     if kernel_size <= 1:
         return binary_mask.astype(np.float32)
-    horizontal = _sliding_mean(
-        binary_mask.astype(np.float32), kernel_size, axis=1)
-    vertical = _sliding_mean(binary_mask.astype(
-        np.float32), kernel_size, axis=0)
+    horizontal = _sliding_mean(binary_mask.astype(np.float32), kernel_size, axis=1)
+    vertical = _sliding_mean(binary_mask.astype(np.float32), kernel_size, axis=0)
     return np.maximum(horizontal, vertical)
 
 
@@ -435,10 +372,8 @@ def _select_grid_components(
         if coverage >= config.max_component_axis_ratio:
             grid_labels.add(component.label)
             continue
-        axis_ratio = max(component.width, component.height) / \
-            max(1, component.thickness)
-        orientation_distance = min(
-            abs(component.orientation), abs(90.0 - component.orientation))
+        axis_ratio = max(component.width, component.height) / max(1, component.thickness)
+        orientation_distance = min(abs(component.orientation), abs(90.0 - component.orientation))
         response = _component_mean(linear_response, labels, component.label)
         compactness = component.perimeter / max(1, component.area)
         if orientation_distance <= config.grid_orientation_tolerance:
@@ -446,9 +381,6 @@ def _select_grid_components(
                 grid_labels.add(component.label)
                 continue
         if compactness >= config.grid_perimeter_area_threshold and response >= config.grid_kernel_response:
-            grid_labels.add(component.label)
-        # Check if component is a straight line (potential tile edge)
-        if _is_straight_line(component.coords):
             grid_labels.add(component.label)
     return grid_labels
 
@@ -480,8 +412,7 @@ def _select_thin_components(stats: Sequence[ComponentStats], config: DetectorCon
             continue
         if component.thickness > config.thin_crack_max_width:
             continue
-        orientation_distance = min(
-            abs(component.orientation), abs(90.0 - component.orientation))
+        orientation_distance = min(abs(component.orientation), abs(90.0 - component.orientation))
         if orientation_distance <= config.grid_orientation_tolerance:
             continue
         thin_labels.add(component.label)

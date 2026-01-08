@@ -84,6 +84,16 @@ class CannyCrackDetector:
             strong=self.STRONG_VALUE,
         )
 
+        dense_grid_mask = (
+            _dense_line_mask(
+                heavy_mask > 0,
+                kernel_size=self._config.grid_density_kernel_size,
+                threshold=self._config.grid_density_threshold,
+            )
+            if self._config.suppress_grid_lines
+            else np.zeros_like(heavy_mask, dtype=bool)
+        )
+
         # Stage 2: analyze connected components from the heavy mask (main signal path).
         labels, stats = _label_components(heavy_mask)
         variance_map = _local_variance(
@@ -94,7 +104,9 @@ class CannyCrackDetector:
         # Stage 3: classify which components belong to grout/grid structures or textured clutter.
         grid_labels = (
             _select_grid_components(stats, labels, linear_strength,
-                                    self._config) if self._config.suppress_grid_lines else set()
+                                    dense_grid_mask, self._config)
+            if self._config.suppress_grid_lines
+            else set()
         )
         texture_labels = _select_texture_components(
             stats, labels, variance_map, self._config)
@@ -418,16 +430,36 @@ def _linear_response(binary_mask: np.ndarray, kernel_size: int) -> np.ndarray:
     return np.maximum(horizontal, vertical)
 
 
+def _dense_line_mask(binary_mask: np.ndarray, *, kernel_size: int, threshold: float) -> np.ndarray:
+    """Locate rows/columns that are densely populated with edges."""
+
+    if kernel_size <= 1:
+        return np.zeros_like(binary_mask, dtype=bool)
+    kernel_size = max(1, int(kernel_size))
+    float_mask = binary_mask.astype(np.float32)
+    horizontal_density = _sliding_mean(float_mask, kernel_size, axis=1)
+    vertical_density = _sliding_mean(float_mask, kernel_size, axis=0)
+    return (horizontal_density >= threshold) | (vertical_density >= threshold)
+
+
 def _select_grid_components(
     stats: Sequence[ComponentStats],
     labels: np.ndarray,
     linear_response: np.ndarray,
+    dense_grid_mask: np.ndarray,
     config: DetectorConfig,
 ) -> Set[int]:
     """Identify grout/tile seams that should be suppressed."""
 
     grid_labels: Set[int] = set()
+    dense_mask_available = dense_grid_mask is not None and np.any(dense_grid_mask)
     for component in stats:
+        if dense_mask_available:
+            overlap = _component_overlap(
+                dense_grid_mask, labels, component.label)
+            if overlap >= config.grid_dense_overlap:
+                grid_labels.add(component.label)
+                continue
         if component.coverage_height >= config.grid_row_density_threshold or component.coverage_width >= config.grid_column_density_threshold:
             grid_labels.add(component.label)
             continue
@@ -441,15 +473,24 @@ def _select_grid_components(
             abs(component.orientation), abs(90.0 - component.orientation))
         response = _component_mean(linear_response, labels, component.label)
         compactness = component.perimeter / max(1, component.area)
+        straight_line = _is_straight_line(
+            component.coords, config.grid_line_angle_variance)
         if orientation_distance <= config.grid_orientation_tolerance:
             if axis_ratio >= config.grid_axis_ratio_threshold and response >= config.grid_kernel_response:
                 grid_labels.add(component.label)
                 continue
         if compactness >= config.grid_perimeter_area_threshold and response >= config.grid_kernel_response:
             grid_labels.add(component.label)
-        # Check if component is a straight line (potential tile edge)
-        if _is_straight_line(component.coords):
-            grid_labels.add(component.label)
+            continue
+        if straight_line:
+            spans_axis = (
+                component.coverage_height >= 0.5 *
+                config.grid_row_density_threshold
+                or component.coverage_width >= 0.5 *
+                config.grid_column_density_threshold
+            )
+            if spans_axis and (response >= config.grid_kernel_response or axis_ratio >= config.grid_axis_ratio_threshold):
+                grid_labels.add(component.label)
     return grid_labels
 
 
@@ -486,6 +527,14 @@ def _select_thin_components(stats: Sequence[ComponentStats], config: DetectorCon
             continue
         thin_labels.add(component.label)
     return thin_labels
+
+
+def _component_overlap(mask: np.ndarray, labels: np.ndarray, label: int) -> float:
+    component_mask = labels == label
+    if not np.any(component_mask):
+        return 0.0
+    overlap = np.count_nonzero(mask & component_mask)
+    return overlap / float(np.count_nonzero(component_mask))
 
 
 def _component_mean(values: np.ndarray, labels: np.ndarray, label: int) -> float:
